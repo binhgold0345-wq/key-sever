@@ -21,6 +21,7 @@ def load_keys():
     # Nếu không có file, tạo mới với key mẫu
     default_keys = {
         "TBTOOL_VIP_7D_ABC123": {"duration": 168, "type": "VIP", "description": "Key VIP 7 ngày"},
+        "TBTOOL_VIP_7D_XYZ789": {"duration": 168, "type": "VIP", "description": "Key VIP 7 ngày"},
         "TBTOOL_VIP_30D_DEF456": {"duration": 720, "type": "VIP", "description": "Key VIP 30 ngày"},
         "TBTOOL_VIP_90D_GHI789": {"duration": 2160, "type": "VIP", "description": "Key VIP 90 ngày"},
         "TBTOOL_VIP_365D_JKL012": {"duration": 8760, "type": "VIP", "description": "Key VIP 365 ngày"},
@@ -51,16 +52,19 @@ def save_used_keys(used_keys):
 @app.route('/', methods=['GET'])
 def home():
     keys = load_keys()
+    used_keys = load_used_keys()
     return jsonify({
         "status": "online",
         "message": "TBTOOL Key Server is running",
-        "version": "1.0",
+        "version": "2.0",
         "total_keys": len(keys),
+        "total_used": len(used_keys),
         "endpoints": {
             "/api/verify_key": "POST - Verify VIP key",
-            "/api/list_keys": "GET - List all keys (hidden)",
+            "/api/list_keys": "GET - List used keys",
             "/api/check_activation": "POST - Check activation status",
-            "/api/add_key": "POST - Add new key (admin)"
+            "/api/add_key": "POST - Add new key (admin)",
+            "/api/delete_key": "POST - Delete key (admin)"
         }
     })
 
@@ -70,6 +74,7 @@ def verify_key():
         data = request.get_json()
         device_id = data.get('device_id')
         key = data.get('key')
+        action = data.get('action', 'verify')
         
         if not device_id or not key:
             return jsonify({
@@ -157,6 +162,16 @@ def check_activation():
             "message": f"Lỗi: {str(e)}"
         }), 500
 
+@app.route('/api/list_keys', methods=['GET'])
+def list_keys():
+    """Liệt kê key đã sử dụng (đồng bộ cho tool)"""
+    used_keys = load_used_keys()
+    return jsonify({
+        "success": True,
+        "total_used": len(used_keys),
+        "used_keys": list(used_keys.keys())
+    })
+
 @app.route('/api/add_key', methods=['POST'])
 def add_key():
     """Thêm key mới (chỉ admin)"""
@@ -164,7 +179,7 @@ def add_key():
         data = request.get_json()
         admin_key = data.get('admin_key')
         
-        # Kiểm tra admin key (có thể đặt mật khẩu cố định)
+        # Kiểm tra admin key
         if admin_key != "TBTOOL_ADMIN_2026":
             return jsonify({
                 "success": False,
@@ -209,13 +224,59 @@ def add_key():
             "message": f"Lỗi: {str(e)}"
         }), 500
 
-@app.route('/api/list_keys', methods=['GET'])
-def list_keys():
-    """Liệt kê key đã sử dụng (không hiện key gốc)"""
+@app.route('/api/delete_key', methods=['POST'])
+def delete_key():
+    """Xóa key (chỉ admin)"""
+    try:
+        data = request.get_json()
+        admin_key = data.get('admin_key')
+        
+        if admin_key != "TBTOOL_ADMIN_2026":
+            return jsonify({
+                "success": False,
+                "message": "Unauthorized"
+            }), 401
+        
+        key_to_delete = data.get('key')
+        
+        if not key_to_delete:
+            return jsonify({
+                "success": False,
+                "message": "Missing key"
+            }), 400
+        
+        keys = load_keys()
+        
+        if key_to_delete not in keys:
+            return jsonify({
+                "success": False,
+                "message": "Key không tồn tại"
+            }), 404
+        
+        del keys[key_to_delete]
+        save_keys(keys)
+        
+        return jsonify({
+            "success": True,
+            "message": f"Đã xóa key: {key_to_delete}"
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"Lỗi: {str(e)}"
+        }), 500
+
+@app.route('/api/stats', methods=['GET'])
+def stats():
+    """Thống kê server"""
+    keys = load_keys()
     used_keys = load_used_keys()
     return jsonify({
+        "total_keys": len(keys),
         "total_used": len(used_keys),
-        "used_keys": list(used_keys.keys())
+        "keys": list(keys.keys()),
+        "used_keys_list": list(used_keys.keys())
     })
 
 if __name__ == '__main__':
